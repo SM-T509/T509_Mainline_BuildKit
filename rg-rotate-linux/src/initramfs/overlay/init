@@ -1,0 +1,133 @@
+#!/bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /tmp /sys/fs/pstore
+
+capture_pstore() {
+	src=/sys/fs/pstore
+	dst="$1"
+	found=0
+
+	[ -d "$dst" ] || mkdir -p "$dst"
+
+	if ! grep -qs " $src " /proc/mounts 2>/dev/null; then
+		mount -t pstore pstore "$src" 2>/dev/null || return 1
+	fi
+
+	for f in "$src"/*; do
+		[ -e "$f" ] || continue
+		found=1
+		cp -a "$f" "$dst"/ 2>/dev/null
+	done
+
+	if [ "$found" = 1 ]; then
+		echo "initramfs: copied pstore logs to $dst" > /dev/kmsg 2>/dev/null
+		return 0
+	fi
+
+	return 1
+}
+
+capture_pstore /tmp/pstore-early
+
+WD_PETTERS=""
+for w in /dev/watchdog /dev/watchdog0 /dev/watchdog1 /dev/watchdog2 /dev/watchdog3; do
+	if [ -e "$w" ]; then
+		( exec 9>"$w"; while : ; do echo -n x >&9; sleep 1; done ) &
+		WD_PETTERS="$WD_PETTERS $!"
+	fi
+done
+
+echo "UMS512 initramfs init reached" > /dev/kmsg 2>/dev/null
+
+# USB role is now selected automatically by the PMIC Type-C port manager
+# (sc27xx_pd) from CC detection: plugging into a host selects device (the
+# g_serial gadget console enumerates), plugging in a device selects host.
+# No manual role forcing -- it would fight the TCPM.
+
+# Try to pivot into the real Debian rootfs. Honor a root= on the kernel cmdline
+# (the microSD extlinux image passes root=/dev/mmcblk0p2); default to the eMMC
+# userdata partition (mmcblk3p74) when none is given, preserving the eMMC flow.
+ROOTDEV=/dev/mmcblk3p74
+for arg in $(cat /proc/cmdline 2>/dev/null); do
+	case "$arg" in
+		root=*) ROOTDEV="${arg#root=}" ;;
+	esac
+done
+NEWROOT=/newroot
+mkdir -p "$NEWROOT"
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	[ -b "$ROOTDEV" ] && break
+	sleep 1
+done
+
+# eMMC can need a moment to settle; retry the mount itself, not just node presence.
+# Note: $NEWROOT/sbin/init is an absolute symlink (-> /lib/systemd/systemd) that
+# can't be resolved from the initramfs root, so probe the real binary instead.
+mounted=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	if mount -t ext4 -o noatime "$ROOTDEV" "$NEWROOT" 2>/dev/null; then
+		mounted=1
+		break
+	fi
+	sleep 1
+done
+
+if [ "$mounted" = 1 ] && [ -x "$NEWROOT/lib/systemd/systemd" ]; then
+	capture_pstore "$NEWROOT/var/log/pstore-early"
+
+	# Stop the initramfs watchdog petters before pivoting. They MUST NOT
+	# survive switch_root: switch_root wipes the old initramfs (including
+	# /bin/busybox and /bin/sleep), so a surviving petter's `sleep 1` exec
+	# fails and it spin-floods the console with "sleep: not found" while
+	# pegging a CPU. The rootfs hw-watchdog.service takes over feeding; if
+	# systemd stalls the hardware watchdog reboots after 60s (nowayout) --
+	# an acceptable, observable failure (the panel freezes on the stalling
+	# unit first, and debug-flush.service syncs the journal every 10s).
+	[ -n "$WD_PETTERS" ] && kill $WD_PETTERS 2>/dev/null
+
+	echo "initramfs: switching root to $ROOTDEV" > /dev/kmsg 2>/dev/null
+	mount --move /dev "$NEWROOT/dev" 2>/dev/null
+	mount --move /proc "$NEWROOT/proc" 2>/dev/null
+	mount --move /sys "$NEWROOT/sys" 2>/dev/null
+	exec switch_root "$NEWROOT" /sbin/init
+fi
+
+# Fallback: rootfs unavailable/unbootable. Keep the initramfs shell on the
+# gadget serial so the device stays reachable for recovery.
+echo "initramfs: rootfs pivot FAILED, staying in initramfs" > /dev/kmsg 2>/dev/null
+umount "$NEWROOT" 2>/dev/null
+
+# Dump everything we need to diagnose why the rootfs pivot failed, straight to
+# the gadget serial, so a freshly-attached host sees it without typing anything.
+# (The previous fallback spawned a non-interactive `sh` with redirected stdin --
+# no prompt, no echo, no job control -- which looked dead on the host side.)
+print_diag() {
+	echo
+	echo "==== UMS512 initramfs RECOVERY: rootfs pivot FAILED ===="
+	echo "--- /proc/cmdline ---"; cat /proc/cmdline 2>&1
+	echo "--- /dev/mmcblk* ---"; ls -l /dev/mmcblk* 2>&1
+	echo "--- /dev/sd* ---"; ls -l /dev/sd* 2>&1
+	echo "--- mmc/sdhci dmesg ---"; dmesg 2>&1 | grep -iE 'mmc|sdhci' | tail -30
+	echo "--- retry: mount -t ext4 $ROOTDEV $NEWROOT ---"
+	mount -t ext4 -o noatime "$ROOTDEV" "$NEWROOT" 2>&1; umount "$NEWROOT" 2>/dev/null
+	echo "==== interactive shell below; Ctrl-D re-prints this banner ===="
+	echo
+}
+
+# Interactive recovery shell on the gadget serial. On a working-USB path this
+# lets us poke the hardware live (devmem, mount -t debugfs, cat regmap, etc.).
+# We RESPAWN it: the gadget can enumerate before the host
+# opens the port, and on disconnect `sh -i` gets EOF and exits -- the loop then
+# starts a fresh one so a host attaching at any time gets a usable prompt. setsid
+# -c gives the shell a controlling tty so job control / line editing work.
+(
+	while [ ! -e /dev/ttyGS0 ]; do sleep 1; done
+	while : ; do
+		print_diag > /dev/ttyGS0 2>&1
+		setsid -c /bin/sh -i <>/dev/ttyGS0 >&0 2>&1
+		sleep 1
+	done
+) &
+while : ; do sleep 5; done
