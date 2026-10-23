@@ -36,7 +36,7 @@ jobs:
           # Copy our T509 DTB
           cp ../sprd-dts/ums512-t509.dts linux-7.1/arch/arm64/boot/dts/sprd/
           # Update Makefile to include our DTB
-          sed -i 's/ums512-1h10.dtb/ums512-1h10.dtb \\\\n\\tums512-t509.dtb/' linux-7.1/arch/arm64/boot/dts/sprd/Makefile
+          sed -i 's/ums512-1h10.dtb/ums512-1h10.dtb \\n\\tums512-t509.dtb/' linux-7.1/arch/arm64/boot/dts/sprd/Makefile
 
       - name: Build busybox
         run: |
@@ -48,29 +48,28 @@ jobs:
           make defconfig
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           sed -i 's/CONFIG_TC=y/CONFIG_TC=n/' .config
-          make -j\ CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
+          make -j$(nproc) CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
           make CONFIG_PREFIX="../../initramfs/rootfs" CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 install
           
           cd ../../initramfs/rootfs
           mkdir -p proc sys dev dev/pts etc mnt/root tmp var/run var/log
-          cat > init << 'EOF'
-#!/bin/busybox sh
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-/bin/busybox mount -t proc none /proc
-/bin/busybox mount -t sysfs none /sys
-/bin/busybox mount -t devtmpfs none /dev
-/bin/busybox mkdir -p /dev/pts
-/bin/busybox mount -t devpts none /dev/pts
-/bin/busybox hostname t509-mainline
-/bin/busybox syslogd -C 64
-/bin/busybox klogd
-echo ""
-echo "=========================================="
-echo "  T509 Mainline Linux - Initramfs Shell"
-echo "=========================================="
-echo ""
-exec /bin/busybox sh
-EOF
+          # Create init script using printf to avoid heredoc issues
+          printf '#!/bin/busybox sh\n' > init
+          printf 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin\n' >> init
+          printf '/bin/busybox mount -t proc none /proc\n' >> init
+          printf '/bin/busybox mount -t sysfs none /sys\n' >> init
+          printf '/bin/busybox mount -t devtmpfs none /dev\n' >> init
+          printf '/bin/busybox mkdir -p /dev/pts\n' >> init
+          printf '/bin/busybox mount -t devpts none /dev/pts\n' >> init
+          printf '/bin/busybox hostname t509-mainline\n' >> init
+          printf '/bin/busybox syslogd -C 64\n' >> init
+          printf '/bin/busybox klogd\n' >> init
+          printf 'echo ""\n' >> init
+          printf 'echo "=========================================="\n' >> init
+          printf 'echo "  T509 Mainline Linux - Initramfs Shell"\n' >> init
+          printf 'echo "=========================================="\n' >> init
+          printf 'echo ""\n' >> init
+          printf 'exec /bin/busybox sh\n' >> init
           chmod +x init
 
       - name: Build kernel
@@ -78,7 +77,7 @@ EOF
           mkdir -p output/kernel_build output
           cd kernel/linux-7.1
           make O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- t509_defconfig
-          make -j\ O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
+          make -j$(nproc) O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
           cp ../../output/kernel_build/arch/arm64/boot/Image ../../output/Image
           cp ../../output/kernel_build/arch/arm64/boot/dts/sprd/ums512-t509.dtb ../../output/ums512-t509.dtb
 
@@ -93,7 +92,7 @@ EOF
           MKBOOTIMG="kernel/linux-7.1/scripts/mkbootimg/mkbootimg.py"
           cat output/Image output/ums512-t509.dtb > output/Image-dtb
           
-          python3 "\" \
+          python3 "$MKBOOTIMG" \
             --kernel output/Image-dtb \
             --ramdisk output/initramfs.cpio.gz \
             --header_version 2 \
