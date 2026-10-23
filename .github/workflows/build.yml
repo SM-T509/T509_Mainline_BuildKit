@@ -32,7 +32,7 @@ jobs:
           cd kernel
           wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
           tar -xf linux-7.1.tar.xz
-          mv linux-7.1 linux-7.1
+          # tar extracts to linux-7.1/ already, no mv needed
           # Copy our T509 DTB
           cp ../sprd-dts/ums512-t509.dts linux-7.1/arch/arm64/boot/dts/sprd/
           # Update Makefile to include our DTB
@@ -53,7 +53,6 @@ jobs:
           
           cd ../../initramfs/rootfs
           mkdir -p proc sys dev dev/pts etc mnt/root tmp var/run var/log
-          # Create init script using printf to avoid heredoc issues
           printf '#!/bin/busybox sh\n' > init
           printf 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin\n' >> init
           printf '/bin/busybox mount -t proc none /proc\n' >> init
