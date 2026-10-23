@@ -123,6 +123,8 @@ jobs:
         run: |
           mkdir -p output/kernel_build output
           cd kernel/linux-7.1
+          # Clean the source tree first
+          make ARCH=arm64 mrproper
           make O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- t509_defconfig
           make -j$(nproc) O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs 2>&1 | tail -50
           cp ../../output/kernel_build/arch/arm64/boot/Image ../../output/Image
