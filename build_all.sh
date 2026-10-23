@@ -1,19 +1,32 @@
 #!/bin/bash
 # Master build script - runs all steps sequentially
-# Usage: ./build_all.sh [step]
-#   step: toolchain, busybox, kernel, bootimg, all (default)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Download kernel if not present
+download_kernel() {
+    if [ ! -d "$ROOT_DIR/kernel/linux-7.1" ]; then
+        echo "Downloading Linux 7.1 kernel source..."
+        mkdir -p "$ROOT_DIR/kernel"
+        cd "$ROOT_DIR/kernel"
+        wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
+        tar -xf linux-7.1.tar.xz
+        mv linux-7.1 linux-7.1
+        # Copy our T509 DTB
+        cp "$ROOT_DIR/sprd-dts/ums512-t509.dts" linux-7.1/arch/arm64/boot/dts/sprd/
+        # Update Makefile
+        sed -i 's/ums512-1h10.dtb/ums512-1h10.dtb \\n\\tums512-t509.dtb/' linux-7.1/arch/arm64/boot/dts/sprd/Makefile
+        echo "Kernel source ready"
+    fi
+}
+
 STEP="${1:-all}"
 
 echo "=========================================="
 echo "  T509 Mainline Linux Build System"
-echo "  Samsung Galaxy Tab A7 Lite (SM-T509)"
-echo "  Unisoc UMS512 (T618)"
 echo "=========================================="
 echo "Step: $STEP"
 echo ""
@@ -33,18 +46,23 @@ run_step() {
 
 case "$STEP" in
     toolchain)
+        download_kernel
         run_step "Toolchain" "$SCRIPT_DIR/01_download_toolchain.sh"
         ;;
     busybox)
+        download_kernel
         run_step "Busybox" "$SCRIPT_DIR/02_build_busybox.sh"
         ;;
     kernel)
+        download_kernel
         run_step "Kernel" "$SCRIPT_DIR/03_build_kernel.sh"
         ;;
     bootimg)
+        download_kernel
         run_step "Boot Image" "$SCRIPT_DIR/04_create_bootimg.sh"
         ;;
     all)
+        download_kernel
         run_step "Toolchain" "$SCRIPT_DIR/01_download_toolchain.sh"
         run_step "Busybox" "$SCRIPT_DIR/02_build_busybox.sh"
         run_step "Kernel" "$SCRIPT_DIR/03_build_kernel.sh"
@@ -52,15 +70,7 @@ case "$STEP" in
         echo "=========================================="
         echo "  BUILD COMPLETE!"
         echo "=========================================="
-        echo "Output files in $ROOT_DIR/output/:"
         ls -lh "$ROOT_DIR/output/"
-        echo ""
-        echo "Flash via TWRP:"
-        echo "  adb reboot recovery"
-        echo "  twrp flash boot $ROOT_DIR/output/t509-mainline-boot.img"
-        echo ""
-        echo "Or fastboot (if available):"
-        echo "  fastboot flash boot $ROOT_DIR/output/t509-mainline-boot.img"
         ;;
     *)
         echo "Usage: $0 [toolchain|busybox|kernel|bootimg|all]"

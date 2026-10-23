@@ -1,0 +1,126 @@
+﻿name: Build T509 Mainline Kernel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build T509 Mainline Kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            make bc bison flex libssl-dev libc6-dev-arm64-cross \
+            cpio gzip device-tree-compiler u-boot-tools \
+            python3 python3-pip wget tar xz-utils
+
+      - name: Download Linux 7.1 kernel source
+        run: |
+          mkdir -p kernel
+          cd kernel
+          wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
+          tar -xf linux-7.1.tar.xz
+          mv linux-7.1 linux-7.1
+          # Copy our T509 DTB
+          cp ../sprd-dts/ums512-t509.dts linux-7.1/arch/arm64/boot/dts/sprd/
+          # Update Makefile to include our DTB
+          sed -i 's/ums512-1h10.dtb/ums512-1h10.dtb \\\\n\\tums512-t509.dtb/' linux-7.1/arch/arm64/boot/dts/sprd/Makefile
+
+      - name: Build busybox
+        run: |
+          mkdir -p initramfs/busybox initramfs/rootfs output
+          cd initramfs/busybox
+          wget -q https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+          tar -xf busybox-1.36.1.tar.bz2
+          cd busybox-1.36.1
+          make defconfig
+          sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          sed -i 's/CONFIG_TC=y/CONFIG_TC=n/' .config
+          make -j\ CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64
+          make CONFIG_PREFIX="../../initramfs/rootfs" CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 install
+          
+          cd ../../initramfs/rootfs
+          mkdir -p proc sys dev dev/pts etc mnt/root tmp var/run var/log
+          cat > init << 'EOF'
+#!/bin/busybox sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox mount -t proc none /proc
+/bin/busybox mount -t sysfs none /sys
+/bin/busybox mount -t devtmpfs none /dev
+/bin/busybox mkdir -p /dev/pts
+/bin/busybox mount -t devpts none /dev/pts
+/bin/busybox hostname t509-mainline
+/bin/busybox syslogd -C 64
+/bin/busybox klogd
+echo ""
+echo "=========================================="
+echo "  T509 Mainline Linux - Initramfs Shell"
+echo "=========================================="
+echo ""
+exec /bin/busybox sh
+EOF
+          chmod +x init
+
+      - name: Build kernel
+        run: |
+          mkdir -p output/kernel_build output
+          cd kernel/linux-7.1
+          make O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- t509_defconfig
+          make -j\ O="../../output/kernel_build" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
+          cp ../../output/kernel_build/arch/arm64/boot/Image ../../output/Image
+          cp ../../output/kernel_build/arch/arm64/boot/dts/sprd/ums512-t509.dtb ../../output/ums512-t509.dtb
+
+      - name: Create initramfs
+        run: |
+          cd initramfs/rootfs
+          find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../../output/initramfs.cpio.gz
+
+      - name: Create boot.img
+        run: |
+          mkdir -p output
+          MKBOOTIMG="kernel/linux-7.1/scripts/mkbootimg/mkbootimg.py"
+          cat output/Image output/ums512-t509.dtb > output/Image-dtb
+          
+          python3 "\" \
+            --kernel output/Image-dtb \
+            --ramdisk output/initramfs.cpio.gz \
+            --header_version 2 \
+            --pagesize 2048 \
+            --base 0x0 \
+            --kernel_offset 0x8000 \
+            --ramdisk_offset 0x5400000 \
+            --tags_offset 0x1000 \
+            --dtb_offset 0x1f00000 \
+            --cmdline "console=ttyS1,115200 root=/dev/block/by-name/system rw rootwait earlycon=sprd,ums512-uart,0x70100000" \
+            -o output/t509-mainline-boot.img
+
+      - name: Verify boot.img
+        run: |
+          python3 kernel/linux-7.1/scripts/mkbootimg/mkbootimg.py --info output/t509-mainline-boot.img
+          ls -lh output/
+
+      - name: Upload boot.img artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: t509-mainline-bootimg
+          path: output/t509-mainline-boot.img
+          retention-days: 30
+
+      - name: Upload all artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: t509-all-artifacts
+          path: output/
+          retention-days: 30

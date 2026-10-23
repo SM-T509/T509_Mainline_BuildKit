@@ -1,0 +1,16 @@
+﻿# Kernel source - downloaded at build time
+kernel/linux-7.1/
+*.tar.xz
+*.tar
+
+# Build outputs
+output/
+initramfs/rootfs/
+initramfs/busybox/
+
+# Toolchain
+toolchain/gcc-linaro-*
+
+# OS files
+.DS_Store
+Thumbs.db
