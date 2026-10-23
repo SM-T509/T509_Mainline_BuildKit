@@ -1,0 +1,292 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/*
+ * Samsung Galaxy Tab A7 Lite (SM-T509) - Unisoc UMS512 (T618)
+ * Based on mainline ums512.dtsi + ums512-1h10.dts
+ * Hardware from extracted stock DTB (T509XXS3AXJ2)
+ */
+
+/dts-v1/;
+
+#include "ums512.dtsi"
+
+/ {
+	model = "Samsung Galaxy Tab A7 Lite (SM-T509)";
+	compatible = "sprd,ums512-t509", "sprd,ums512-1h10", "sprd,ums512";
+
+	aliases {
+		serial0 = &uart0;
+		serial1 = &uart1;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x80000000>; /* 2GB DDR */
+	};
+
+	chosen {
+		stdout-path = "serial1:115200n8";
+	};
+
+	/* Reserved memory regions from stock DTB */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ddrbist-mem@80000000 {
+			reg = <0x0 0x80000000 0x0 0x1000>;
+		};
+
+		audio-mem@87500000 {
+			reg = <0x0 0x87500000 0x0 0x300000>;
+		};
+
+		sipc-mem@87800000 {
+			reg = <0x0 0x87800000 0x0 0x800000>;
+		};
+
+		audiodsp-mem@89000000 {
+			reg = <0x0 0x89000000 0x0 0x600000>;
+		};
+
+		iq-mem@90000000 {
+			compatible = "sprd,iq-mem";
+			reg = <0x0 0x90000000 0x0 0x4000000>;
+		};
+
+		ramoops@fff80000 {
+			compatible = "ramoops";
+			reg = <0x0 0xfff80000 0x0 0x40000>;
+		};
+	};
+};
+
+/* GIC - already in ums512.dtsi, matches our DTB */
+
+/* UARTs - uart1 is console per stock DTB */
+&uart0 {
+	status = "disabled";
+};
+
+&uart1 {
+	status = "okay";
+};
+
+/* eMMC storage (sdio3) - matches stock DTB */
+&sdio3 {
+	status = "okay";
+	bus-width = <8>;
+	no-sdio;
+	no-sd;
+	non-removable;
+	cap-mmc-hw-reset;
+	/* reg = <0x1400000 0x1000> in apb@70000000 -> 0x71400000 */
+};
+
+/* SD card (sdio0) */
+&sdio0 {
+	status = "disabled";
+};
+
+/* USB MUSB - from stock DTB at 0x5fff0000 */
+&usb {
+	status = "okay";
+	/* reg = <0x5fff0000 0x2000> in soc */
+	dr_mode = "otg";
+};
+
+/* PMIC SC2730 on SPI (adi_bus) */
+&adi_bus {
+	status = "okay";
+
+	pmic@0 {
+		compatible = "sprd,sc2730";
+		reg = <0x0>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH>; /* TODO: verify IRQ */
+
+		/* SC2730 sub-devices */
+		rtc@200 {
+			compatible = "sprd,sc27xx-rtc";
+			reg = <0x200>;
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 101 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		audio-codec@1000 {
+			compatible = "sprd,sc2730-audio-codec";
+			reg = <0x1000>;
+			status = "okay";
+		};
+
+		typec@380 {
+			compatible = "sprd,sc27xx-typec";
+			reg = <0x380>;
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 102 IRQ_TYPE_LEVEL_HIGH>;
+			status = "okay";
+		};
+
+		fgu@c00 {
+			compatible = "sprd,sc27xx-fgu";
+			reg = <0xc00>;
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		poweroff@1820 {
+			compatible = "sprd,sc27xx-poweroff";
+			reg = <0x1820>;
+		};
+	};
+};
+
+/* WiFi/BT - sprd,sc2355-wifi / sprd,marlin3 on SDIO */
+&sdio0 {
+	status = "okay";
+	bus-width = <4>;
+	no-sdio;
+	no-mmc;
+	sprd,phy-delay-sd-uhs-sdr104 = <0x7f 0x73 0x72 0x72>;
+	sprd,phy-delay-sd-uhs-sdr50 = <0x6e 0x7f 0x01 0x01>;
+	sprd,phy-delay-sd-highspeed = <0x7f 0x1a 0x9a 0x9a>;
+	sprd,phy-delay-legacy = <0x7f 0x1a 0x9a 0x9a>;
+	sd-uhs-sdr104;
+	sd-uhs-sdr50;
+
+	/* WiFi/BT module */
+	wlan@1 {
+		compatible = "sprd,sc2355-wifi", "sprd,marlin3";
+		reg = <0x1>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 150 IRQ_TYPE_LEVEL_HIGH>; /* TODO: verify */
+		status = "okay";
+	};
+};
+
+/* Touchscreen - Novatek NVT-ts-spi on SPI */
+/* Need to add SPI controller and touch node */
+&spi {
+	status = "okay";
+
+	novatek_ts: novatek_ts@0 {
+		compatible = "novatek,NVT-ts-spi";
+		reg = <0x0>;
+		spi-max-frequency = <10000000>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>; /* TODO: verify */
+		status = "okay";
+	};
+};
+
+/* Audio - AKM AK4376 + SC2730 codec */
+sound {
+	compatible = "sprd,vbc-v4-codec-sc2730";
+	status = "okay";
+};
+
+/* GPU - Mali G52 (Gondul) */
+gpu {
+	compatible = "sprd,mali-gondul";
+	reg = <0x0 0x60000000 0x0 0x1000000>; /* TODO: verify reg */
+	status = "okay";
+};
+
+/* Display subsystem - DPU/DSI */
+display-subsystem {
+	compatible = "sprd,display-subsystem";
+	status = "okay";
+};
+
+/* Sensors hub */
+sprd-sensorhub {
+	compatible = "sprd,sharkl5pro-sensorhub";
+	status = "okay";
+};
+
+/* Thermal zones from stock DTB */
+thermal-zones {
+	soc-thmzone {
+		/* cooling maps, trips from stock */
+	};
+
+	gpu-thmzone {
+	};
+
+	cluster0-thmzone {
+	};
+
+	cluster1-thmzone {
+	};
+};
+
+/* Cooling devices */
+cooling-devices {
+	cluster0-cooling {
+		compatible = "sprd,cluster-cooling";
+	};
+
+	cluster1-cooling {
+		compatible = "sprd,cluster-cooling";
+	};
+
+	gpu-cooling0 {
+		compatible = "sprd,mali-power-model";
+	};
+};
+
+/* Charger - BQ25890 on I2C */
+&i2c@32060000 {
+	status = "okay";
+
+	bq25890@6b {
+		compatible = "ti,bq25890_chg";
+		reg = <0x6b>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>; /* TODO: verify */
+		status = "okay";
+	};
+};
+
+/* I2C for touch and other sensors */
+&i2c@32060000 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+};
+
+/* Voltage regulators from SC2730 */
+regulators {
+	compatible = "sprd,sc27xx-regulator";
+	/* DCDC_CPU, DCDC_GPU, DCDC_CORE, DCDC_MEM, etc. from stock DTB */
+};
+
+/* GNSS */
+gnss_common_ctl {
+	compatible = "sprd,gnss_common_ctl";
+	status = "okay";
+};
+
+/* FM Radio */
+sprd-fm {
+	compatible = "sprd,marlin3-fm";
+	status = "okay";
+};
+
+/* Audio DSP */
+audio-dsp-dump@0 {
+	compatible = "sprd,audio-dsp-log";
+	status = "okay";
+};
+
+audio-dsp-dump@1 {
+	compatible = "sprd,audio-dsp-pcm";
+	status = "okay";
+};
+
+audio-dsp-dump@2 {
+	compatible = "sprd,audio-dsp-mem";
+	status = "okay";
+};
