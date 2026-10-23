@@ -32,11 +32,81 @@ jobs:
           cd kernel
           wget -q https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz
           tar -xf linux-7.1.tar.xz
-          # tar extracts to linux-7.1/ already, no mv needed
           # Copy our T509 DTB
           cp ../sprd-dts/ums512-t509.dts linux-7.1/arch/arm64/boot/dts/sprd/
           # Update Makefile to include our DTB
           sed -i 's/ums512-1h10.dtb/ums512-1h10.dtb \\n\\tums512-t509.dtb/' linux-7.1/arch/arm64/boot/dts/sprd/Makefile
+
+      - name: Create T509 defconfig
+        run: |
+          cd kernel/linux-7.1
+          cp arch/arm64/configs/defconfig arch/arm64/configs/t509_defconfig
+          # Append T509-specific configs using printf to avoid heredoc issues
+          printf '\n# SPRD/UMS512 Support\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_ARCH_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MACH_UMS512=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SOC_UMS512=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# GICv3\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_GIC_V3=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_GIC_V3_ITS=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# PSCI\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_ARM_PSCI_FW=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Timer\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_ARM_ARCH_TIMER=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# CPUs\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SMP=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_NR_CPUS=8\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# UMS512 specific drivers\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SERIAL_SPRD_UART=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MMC_SPRD_SDHCI=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MMC_SDHCI_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# USB MUSB\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_USB_MUSB_HDRC=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_USB_MUSB_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# I2C\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_I2C_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# SPI\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SPI_SPRD_ADI=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# PMIC SC2730\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MFD_SC27XX=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_REGULATOR_SC27XX=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_RTC_DRV_SC27XX=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SENSORS_SC27XX=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Touchscreen\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_TOUCHSCREEN_NOVATEK_NVT_TS=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# WiFi - SC2355\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_WLAN_VENDOR_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SPRD_WLAN=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Audio\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SND_SOC_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SND_SOC_SPRD_VBC=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SND_SOC_SC2730_CODEC=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# GPU Mali\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MALI_MIDGARD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MALI_G52=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Display\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_DRM_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_DRM_SPRD_DPU=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Thermal\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_SPRD_THERMAL=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Pin control\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_PINCTRL_SPRD=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Clock\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_CLK_SPRD_UMS512=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Reserved memory\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_OF_RESERVED_MEM=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Firmware\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_FIRMWARE_MEMMAP=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Kernel features\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_KERNEL_LZ4=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_DEBUG_INFO=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_DEBUG_INFO_BTF=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# USB OTG\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_USB_OTG=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_USB_OTG_FSM=y\n' >> arch/arm64/configs/t509_defconfig
+          printf '\n# Modules\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MODULES=y\n' >> arch/arm64/configs/t509_defconfig
+          printf 'CONFIG_MODULE_UNLOAD=y\n' >> arch/arm64/configs/t509_defconfig
 
       - name: Build busybox
         run: |
